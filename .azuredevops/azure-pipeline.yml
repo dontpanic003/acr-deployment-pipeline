@@ -1,0 +1,66 @@
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - WebApp/*
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  repository: 'repo-one/app-one'
+  staticTag: 'ABC123'
+  initialEnvRepoServiceConnection: 'devServiceConnection'
+  initialEnvAcrName: 'abc123dev'
+  higherEnvRepoServiceConnection: 'prodServiceConnection'
+  higherEnvAcrName: 'abc123prod'
+  DockerFileLocation: 'WebbApp/Dockerfile'  
+  
+stages:
+- stage: 'BuildAndPush'
+  displayName: 'Build and Push Container Image'
+  pool:
+    name: 'Azure Pipelines'
+  jobs:
+    - job: 'BuildAndPush'
+      steps:
+      - task: Docker@2
+        displayName: 'Build and Push Image'
+        inputs:
+          containerRegistry: $(initialEnvRepoServiceConnection)
+          repository: $(repository)
+          command: 'buildAndPush'
+          Dockerfile: '$(System.DefaultWorkingDirectory)/$(DockerFileLocation)'
+          tags: |
+            $(staticTag)-$(Build.BuildId)
+
+- stage: 'Promote'
+  displayName: 'Promote Container Image'
+  pool:
+    name: 'Azure Pipelines'
+  jobs:
+    - job: 'Promote'
+      steps:
+      - task: Docker@2
+        displayName: 'Pull Image'
+        inputs:
+          command: 'pull'
+          containerRegistry: $(initialEnvRepoServiceConnection)          
+          arguments: '$(initialEnvAcrName).azurecr.io/$(repository):$(staticTag)-$(Build.BuildId)'
+      - task: Docker@2
+        displayName: 'ReTag Image'
+        inputs:
+          containerRegistry: $(higherEnvRepoServiceConnection)
+          repository: $(repository)
+          command: 'tag'
+          arguments: '$(initialEnvAcrName).azurecr.io/$(repository):$(staticTag)-$(Build.BuildId) $(higherEnvAcrName).azurecr.io/$(repository):$(staticTag)-$(Build.BuildId)'
+      - task: Docker@2
+        displayName: 'Push Image'
+        inputs:
+          containerRegistry: $(higherEnvRepoServiceConnection)
+          repository: $(repository)
+          command: 'push'
+          tags: |
+            $(staticTag)-$(Build.BuildId)
